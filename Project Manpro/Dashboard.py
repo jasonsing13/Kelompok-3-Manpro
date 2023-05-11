@@ -2,6 +2,8 @@ import pandas as pd  # pip install pandas openpyxl
 import plotly.express as px  # pip install plotly-express
 import streamlit as st  # pip install streamlit
 from sklearn.neighbors import KNeighborsClassifier # pip install scikit-learn
+from sklearn.model_selection import GridSearchCV
+
 
 st.set_page_config(page_title="Dashboard UMKM", page_icon=":bar_chart:", layout="centered")
 
@@ -25,28 +27,40 @@ def klasifikasi (dataframe, provinsi, sektor, produksi, tahun):
     datmin_df["Provinsi"] = datmin_df["Provinsi"].replace(prov_uniq)
     datmin_df["Sektor"] = datmin_df["Sektor"].replace(sek_uniq)
 
-    #Memulai algoritma KNN
+    #Set data for train
     Features = ["Provinsi","Sektor","Kemampuan_Produksi","Tahun_Mulai"]
-
-    #Pelatihan data
     x = datmin_df[Features].copy()
     y = datmin_df['Pembiayaan_Bank']
-    knn = KNeighborsClassifier(n_neighbors=4)
+    parameter = {
+       "n_neighbors": [2,3,4,5,6,7,8,9,10],
+        "weights": ["uniform", "distance"],
+        "p": [1, 2]
+    }
+
+    #Optimisasi Parameter
+    model = GridSearchCV(KNeighborsClassifier(),parameter, cv=3, n_jobs=-1, verbose=1)
+    model.fit(x,y)
+    n_neighbors = model.best_params_["n_neighbors"]
+    weights = model.best_params_["weights"]
+    p = model.best_params_["p"]
+
+    #Pelatihan data
+    knn = KNeighborsClassifier(n_neighbors=n_neighbors,weights=weights,p=p)
     knn.fit(x,y)
 
+    #Replace inputan provinsi dan sektor agar valuenya menjadi angka
     for key, value in prov_uniq.items():
         provinsi = provinsi.replace(key, str(value))
-
     for key, value in sek_uniq.items():
         sektor = sektor.replace(key, str(value))
 
     #Mencoba buat DF baru
-    data = {"Provinsi": provinsi,
+    data_input = {"Provinsi": provinsi,
         "Sektor": sektor, 
         "Kemampuan_Produksi":produksi,
         "Tahun_Mulai":tahun}
     
-    predict_data = pd.DataFrame(data, index=[0])
+    predict_data = pd.DataFrame(data_input, index=[0])
 
     #Memprediksi Data
     predict_data["Prediction"] = knn.predict(predict_data)
@@ -67,10 +81,27 @@ umkm_df = get_data_from_excel()
 
 # ==== MAINPAGE ====
 st.title(":bar_chart: Dashboard UMKM")
+st.write("Deskripsi")
+jml_perusahaan_provinsi = umkm_df.groupby(['Provinsi']).count()
+fig_product_sales = px.bar(
+    jml_perusahaan_provinsi,
+    x=jml_perusahaan_provinsi.index,
+    y="Nama_Perusahaan",
+    orientation="v",
+    title="<b>Sales by Product Line</b>",
+    color_discrete_sequence=["#0083B8"] * len(jml_perusahaan_provinsi),
+    template="plotly_white",
+)
+st.plotly_chart(fig_product_sales)
+
+st.dataframe(jml_perusahaan_provinsi)
+
 st.markdown("##")
 
 # -- Bagian Klasifikasi --
 st.title(":bar_chart: Prediksi Pembiayaan")
+st.write("Pada bagian ini anda dapat memprediksi pembiayaan bank sesuai data UMKM anda")
+st.write("============================================================================")
 
 # -> memasukkan data yang diperlukan <-
 provinsi_data = st.selectbox("Pilih Provinsi :", 
@@ -102,5 +133,6 @@ st.markdown("##")
 
 # -- Bagian List Data --
 st.title(":bar_chart: List Data")
+st.write("Deskripsi")
 umkm_df["Tahun_Mulai"] = umkm_df["Tahun_Mulai"].astype(str)
 st.dataframe(umkm_df)
